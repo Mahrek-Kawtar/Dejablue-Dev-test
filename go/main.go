@@ -48,8 +48,9 @@ func main() {
 					MaxBatteryLevelKwH:     70,
 					RangeKmPerKwH:          5,
 				}),
-				charge.WithDynamicStatus(time.Second*5)),
+				charge.WithDynamicStatus(time.Second*5),
 		),
+	),
 	}
 
 	srv := handler.New(schema.NewExecutableSchema(schema.Config{Resolvers: res}))

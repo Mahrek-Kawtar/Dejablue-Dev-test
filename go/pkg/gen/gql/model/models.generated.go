@@ -6,7 +6,13 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"time"
 )
+
+type ChargeEstimates struct {
+	EstimatedPrice     float64 `json:"estimatedPrice"`
+	EstimatedTimeHours float64 `json:"estimatedTimeHours"`
+}
 
 type Charger struct {
 	ID       string        `json:"id"`
@@ -16,6 +22,12 @@ type Charger struct {
 
 type ChargerState struct {
 	ChargerStatus ChargerStatus `json:"chargerStatus"`
+}
+
+type CheapestChargeWindow struct {
+	StartTime      *time.Time `json:"startTime,omitempty"`
+	EndTime        *time.Time `json:"endTime,omitempty"`
+	EstimatedPrice float64    `json:"estimatedPrice"`
 }
 
 type Query struct {

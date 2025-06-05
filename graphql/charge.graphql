@@ -1,3 +1,5 @@
+scalar Time
+
 enum ChargerStatus {
   Available
   PluggedIn
@@ -7,6 +9,11 @@ type VehicleStateOfCharge {
   currentBatteryLevelKwH: Float
   maxBatteryLevelKwH: Float
   rangeKmPerKwH: Float
+}
+
+type ChargeEstimates {
+  estimatedPrice: Float!
+  estimatedTimeHours: Float!
 }
 
 type Charger {
@@ -22,6 +29,14 @@ type ChargerState {
 type Query {
   Charger(id: String!): Charger
   VehicleStateOfCharge(id: String!): VehicleStateOfCharge
+  ChargeEstimates(id: String!): ChargeEstimates #we add rate in task 1&2 
+  CheapestChargeWindow(id: String!): CheapestChargeWindow 
+}
+
+type CheapestChargeWindow {
+  startTime: Time
+  endTime: Time
+  estimatedPrice: Float!
 }
 
 type Subscription {

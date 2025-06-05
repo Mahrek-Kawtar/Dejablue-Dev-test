@@ -7,6 +7,7 @@ package resolver
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/deja-blue/software-interview/go/pkg/charge"
 	"github.com/deja-blue/software-interview/go/pkg/gen/gql/model"
@@ -34,6 +35,76 @@ func (r *queryResolver) VehicleStateOfCharge(ctx context.Context, id string) (*m
 		return nil, nil
 	}
 	return model, nil
+}
+
+// Task 2
+func (r *queryResolver) ChargeEstimates(ctx context.Context, id string) (*model.ChargeEstimates, error) {
+	c, err := r.ChargeResolver.Charger(charge.ChargerID(id))
+	if err != nil {
+		return nil, err
+	}
+	vehicle, err := c.ToVehicleStateOfChargeModel()
+	if err != nil || vehicle == nil {
+		return nil, errors.New("vehicle state unavailable")
+	}
+
+	remainingCharge := *vehicle.MaxBatteryLevelKwH - *vehicle.CurrentBatteryLevelKwH
+	if remainingCharge <= 0 {
+		return &model.ChargeEstimates{
+			EstimatedPrice:     0,
+			EstimatedTimeHours: 0,
+		}, nil
+	}
+
+	now := time.Now()
+	rate := charge.VariableRateAt(now) // VariableRateAt returns price in dollars/kWh, so multiply by 100 to get cents
+
+	// Calculate the estimated price using the formula:
+	// Price = (Remaining charge in kWh * Tariff in cents per kWh) / 100 = price in dollars
+	estimatedPrice := charge.EstimatedPriceForRemainingCharge(remainingCharge, rate)
+
+	// Calculate charging time in hours based on the charger's max power (kW)
+	chargePowerKw := float64(c.MaxKwHDraw)
+	timeHours := remainingCharge / chargePowerKw
+
+	return &model.ChargeEstimates{
+		EstimatedPrice:     estimatedPrice,
+		EstimatedTimeHours: timeHours,
+	}, nil
+}
+
+// CheapestChargeWindow is the resolver for the CheapestChargeWindow field.
+func (r *queryResolver) CheapestChargeWindow(ctx context.Context, id string) (*model.CheapestChargeWindow, error) {
+	c, err := r.ChargeResolver.Charger(charge.ChargerID(id))
+	if err != nil {
+		return nil, err
+	}
+	vehicle, err := c.ToVehicleStateOfChargeModel()
+	if err != nil || vehicle == nil {
+		return nil, errors.New("vehicle state unavailable")
+	}
+
+	remainingCharge := *vehicle.MaxBatteryLevelKwH - *vehicle.CurrentBatteryLevelKwH
+	if remainingCharge <= 0 {
+		// When no charge is needed, return nil times (allowed because fields are *time.Time)
+		return &model.CheapestChargeWindow{
+			StartTime:      nil,
+			EndTime:        nil,
+			EstimatedPrice: 0,
+		}, nil
+	}
+
+	now := time.Now()
+	maxPower := float64(c.MaxKwHDraw)
+
+	start, end, price := charge.CheapestChargeWindowECO(now, remainingCharge, maxPower)
+
+	// start, end are time.Time values, take pointers here
+	return &model.CheapestChargeWindow{
+		StartTime:      &start,
+		EndTime:        &end,
+		EstimatedPrice: price,
+	}, nil
 }
 
 // ChargerState is the resolver for the ChargerState field.

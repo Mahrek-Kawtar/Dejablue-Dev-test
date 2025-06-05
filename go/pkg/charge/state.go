@@ -54,6 +54,7 @@ func (c *Charger) ToChargeModel() *model.Charger {
 	chargeModel := &model.Charger{
 		ID:       string(c.ID),
 		PowerKwH: int(c.MaxKwHDraw),
+		Status:   c.Status(), //we first add the status
 	}
 
 	return chargeModel

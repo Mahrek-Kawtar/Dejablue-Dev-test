@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
@@ -47,6 +48,11 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	ChargeEstimates struct {
+		EstimatedPrice     func(childComplexity int) int
+		EstimatedTimeHours func(childComplexity int) int
+	}
+
 	Charger struct {
 		ID       func(childComplexity int) int
 		PowerKwH func(childComplexity int) int
@@ -57,8 +63,16 @@ type ComplexityRoot struct {
 		ChargerStatus func(childComplexity int) int
 	}
 
+	CheapestChargeWindow struct {
+		EndTime        func(childComplexity int) int
+		EstimatedPrice func(childComplexity int) int
+		StartTime      func(childComplexity int) int
+	}
+
 	Query struct {
+		ChargeEstimates      func(childComplexity int, id string) int
 		Charger              func(childComplexity int, id string) int
+		CheapestChargeWindow func(childComplexity int, id string) int
 		VehicleStateOfCharge func(childComplexity int, id string) int
 	}
 
@@ -76,6 +90,8 @@ type ComplexityRoot struct {
 type QueryResolver interface {
 	Charger(ctx context.Context, id string) (*model.Charger, error)
 	VehicleStateOfCharge(ctx context.Context, id string) (*model.VehicleStateOfCharge, error)
+	ChargeEstimates(ctx context.Context, id string) (*model.ChargeEstimates, error)
+	CheapestChargeWindow(ctx context.Context, id string) (*model.CheapestChargeWindow, error)
 }
 type SubscriptionResolver interface {
 	ChargerState(ctx context.Context, id string) (<-chan *model.ChargerState, error)
@@ -99,6 +115,20 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 	ec := executionContext{nil, e, 0, 0, nil}
 	_ = ec
 	switch typeName + "." + field {
+
+	case "ChargeEstimates.estimatedPrice":
+		if e.complexity.ChargeEstimates.EstimatedPrice == nil {
+			break
+		}
+
+		return e.complexity.ChargeEstimates.EstimatedPrice(childComplexity), true
+
+	case "ChargeEstimates.estimatedTimeHours":
+		if e.complexity.ChargeEstimates.EstimatedTimeHours == nil {
+			break
+		}
+
+		return e.complexity.ChargeEstimates.EstimatedTimeHours(childComplexity), true
 
 	case "Charger.id":
 		if e.complexity.Charger.ID == nil {
@@ -128,6 +158,39 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.ChargerState.ChargerStatus(childComplexity), true
 
+	case "CheapestChargeWindow.endTime":
+		if e.complexity.CheapestChargeWindow.EndTime == nil {
+			break
+		}
+
+		return e.complexity.CheapestChargeWindow.EndTime(childComplexity), true
+
+	case "CheapestChargeWindow.estimatedPrice":
+		if e.complexity.CheapestChargeWindow.EstimatedPrice == nil {
+			break
+		}
+
+		return e.complexity.CheapestChargeWindow.EstimatedPrice(childComplexity), true
+
+	case "CheapestChargeWindow.startTime":
+		if e.complexity.CheapestChargeWindow.StartTime == nil {
+			break
+		}
+
+		return e.complexity.CheapestChargeWindow.StartTime(childComplexity), true
+
+	case "Query.ChargeEstimates":
+		if e.complexity.Query.ChargeEstimates == nil {
+			break
+		}
+
+		args, err := ec.field_Query_ChargeEstimates_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.ChargeEstimates(childComplexity, args["id"].(string)), true
+
 	case "Query.Charger":
 		if e.complexity.Query.Charger == nil {
 			break
@@ -139,6 +202,18 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 		}
 
 		return e.complexity.Query.Charger(childComplexity, args["id"].(string)), true
+
+	case "Query.CheapestChargeWindow":
+		if e.complexity.Query.CheapestChargeWindow == nil {
+			break
+		}
+
+		args, err := ec.field_Query_CheapestChargeWindow_args(context.TODO(), rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.CheapestChargeWindow(childComplexity, args["id"].(string)), true
 
 	case "Query.VehicleStateOfCharge":
 		if e.complexity.Query.VehicleStateOfCharge == nil {
@@ -291,7 +366,9 @@ func (ec *executionContext) introspectType(name string) (*introspection.Type, er
 }
 
 var sources = []*ast.Source{
-	{Name: "../../../../../graphql/charge.graphql", Input: `enum ChargerStatus {
+	{Name: "../../../../../graphql/charge.graphql", Input: `scalar Time
+
+enum ChargerStatus {
   Available
   PluggedIn
 }
@@ -300,6 +377,11 @@ type VehicleStateOfCharge {
   currentBatteryLevelKwH: Float
   maxBatteryLevelKwH: Float
   rangeKmPerKwH: Float
+}
+
+type ChargeEstimates {
+  estimatedPrice: Float!
+  estimatedTimeHours: Float!
 }
 
 type Charger {
@@ -315,6 +397,14 @@ type ChargerState {
 type Query {
   Charger(id: String!): Charger
   VehicleStateOfCharge(id: String!): VehicleStateOfCharge
+  ChargeEstimates(id: String!): ChargeEstimates #we add rate in task 1&2 
+  CheapestChargeWindow(id: String!): CheapestChargeWindow 
+}
+
+type CheapestChargeWindow {
+  startTime: Time
+  endTime: Time
+  estimatedPrice: Float!
 }
 
 type Subscription {
@@ -327,7 +417,37 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
 // region    ***************************** args.gotpl *****************************
 
+func (ec *executionContext) field_Query_ChargeEstimates_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["id"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
+		arg0, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["id"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_Charger_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
+	var err error
+	args := map[string]interface{}{}
+	var arg0 string
+	if tmp, ok := rawArgs["id"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("id"))
+		arg0, err = ec.unmarshalNString2string(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_CheapestChargeWindow_args(ctx context.Context, rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	var err error
 	args := map[string]interface{}{}
 	var arg0 string
@@ -424,6 +544,94 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _ChargeEstimates_estimatedPrice(ctx context.Context, field graphql.CollectedField, obj *model.ChargeEstimates) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ChargeEstimates_estimatedPrice(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EstimatedPrice, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(float64)
+	fc.Result = res
+	return ec.marshalNFloat2float64(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ChargeEstimates_estimatedPrice(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChargeEstimates",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ChargeEstimates_estimatedTimeHours(ctx context.Context, field graphql.CollectedField, obj *model.ChargeEstimates) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_ChargeEstimates_estimatedTimeHours(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EstimatedTimeHours, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(float64)
+	fc.Result = res
+	return ec.marshalNFloat2float64(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_ChargeEstimates_estimatedTimeHours(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ChargeEstimates",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
 
 func (ec *executionContext) _Charger_id(ctx context.Context, field graphql.CollectedField, obj *model.Charger) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Charger_id(ctx, field)
@@ -601,6 +809,132 @@ func (ec *executionContext) fieldContext_ChargerState_chargerStatus(ctx context.
 	return fc, nil
 }
 
+func (ec *executionContext) _CheapestChargeWindow_startTime(ctx context.Context, field graphql.CollectedField, obj *model.CheapestChargeWindow) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CheapestChargeWindow_startTime(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.StartTime, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*time.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖtimeᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CheapestChargeWindow_startTime(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CheapestChargeWindow",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CheapestChargeWindow_endTime(ctx context.Context, field graphql.CollectedField, obj *model.CheapestChargeWindow) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CheapestChargeWindow_endTime(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EndTime, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*time.Time)
+	fc.Result = res
+	return ec.marshalOTime2ᚖtimeᚐTime(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CheapestChargeWindow_endTime(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CheapestChargeWindow",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Time does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _CheapestChargeWindow_estimatedPrice(ctx context.Context, field graphql.CollectedField, obj *model.CheapestChargeWindow) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_CheapestChargeWindow_estimatedPrice(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.EstimatedPrice, nil
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		if !graphql.HasFieldError(ctx, fc) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(float64)
+	fc.Result = res
+	return ec.marshalNFloat2float64(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_CheapestChargeWindow_estimatedPrice(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CheapestChargeWindow",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_Charger(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	fc, err := ec.fieldContext_Query_Charger(ctx, field)
 	if err != nil {
@@ -715,6 +1049,124 @@ func (ec *executionContext) fieldContext_Query_VehicleStateOfCharge(ctx context.
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Query_VehicleStateOfCharge_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_ChargeEstimates(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_ChargeEstimates(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().ChargeEstimates(rctx, fc.Args["id"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.ChargeEstimates)
+	fc.Result = res
+	return ec.marshalOChargeEstimates2ᚖgithubᚗcomᚋdejaᚑblueᚋsoftwareᚑinterviewᚋgoᚋpkgᚋgenᚋgqlᚋmodelᚐChargeEstimates(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_ChargeEstimates(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "estimatedPrice":
+				return ec.fieldContext_ChargeEstimates_estimatedPrice(ctx, field)
+			case "estimatedTimeHours":
+				return ec.fieldContext_ChargeEstimates_estimatedTimeHours(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ChargeEstimates", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_ChargeEstimates_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_CheapestChargeWindow(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	fc, err := ec.fieldContext_Query_CheapestChargeWindow(ctx, field)
+	if err != nil {
+		return graphql.Null
+	}
+	ctx = graphql.WithFieldContext(ctx, fc)
+	defer func() {
+		if r := recover(); r != nil {
+			ec.Error(ctx, ec.Recover(ctx, r))
+			ret = graphql.Null
+		}
+	}()
+	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return ec.resolvers.Query().CheapestChargeWindow(rctx, fc.Args["id"].(string))
+	})
+	if err != nil {
+		ec.Error(ctx, err)
+		return graphql.Null
+	}
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.(*model.CheapestChargeWindow)
+	fc.Result = res
+	return ec.marshalOCheapestChargeWindow2ᚖgithubᚗcomᚋdejaᚑblueᚋsoftwareᚑinterviewᚋgoᚋpkgᚋgenᚋgqlᚋmodelᚐCheapestChargeWindow(ctx, field.Selections, res)
+}
+
+func (ec *executionContext) fieldContext_Query_CheapestChargeWindow(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "startTime":
+				return ec.fieldContext_CheapestChargeWindow_startTime(ctx, field)
+			case "endTime":
+				return ec.fieldContext_CheapestChargeWindow_endTime(ctx, field)
+			case "estimatedPrice":
+				return ec.fieldContext_CheapestChargeWindow_estimatedPrice(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type CheapestChargeWindow", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_CheapestChargeWindow_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -2824,6 +3276,50 @@ func (ec *executionContext) fieldContext___Type_specifiedByURL(ctx context.Conte
 
 // region    **************************** object.gotpl ****************************
 
+var chargeEstimatesImplementors = []string{"ChargeEstimates"}
+
+func (ec *executionContext) _ChargeEstimates(ctx context.Context, sel ast.SelectionSet, obj *model.ChargeEstimates) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, chargeEstimatesImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ChargeEstimates")
+		case "estimatedPrice":
+			out.Values[i] = ec._ChargeEstimates_estimatedPrice(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "estimatedTimeHours":
+			out.Values[i] = ec._ChargeEstimates_estimatedTimeHours(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var chargerImplementors = []string{"Charger"}
 
 func (ec *executionContext) _Charger(ctx context.Context, sel ast.SelectionSet, obj *model.Charger) graphql.Marshaler {
@@ -2912,6 +3408,49 @@ func (ec *executionContext) _ChargerState(ctx context.Context, sel ast.Selection
 	return out
 }
 
+var cheapestChargeWindowImplementors = []string{"CheapestChargeWindow"}
+
+func (ec *executionContext) _CheapestChargeWindow(ctx context.Context, sel ast.SelectionSet, obj *model.CheapestChargeWindow) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, cheapestChargeWindowImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CheapestChargeWindow")
+		case "startTime":
+			out.Values[i] = ec._CheapestChargeWindow_startTime(ctx, field, obj)
+		case "endTime":
+			out.Values[i] = ec._CheapestChargeWindow_endTime(ctx, field, obj)
+		case "estimatedPrice":
+			out.Values[i] = ec._CheapestChargeWindow_estimatedPrice(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var queryImplementors = []string{"Query"}
 
 func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
@@ -2960,6 +3499,44 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_VehicleStateOfCharge(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "ChargeEstimates":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_ChargeEstimates(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "CheapestChargeWindow":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_CheapestChargeWindow(ctx, field)
 				return res
 			}
 
@@ -3411,6 +3988,21 @@ func (ec *executionContext) marshalNChargerStatus2githubᚗcomᚋdejaᚑblueᚋs
 	return v
 }
 
+func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v interface{}) (float64, error) {
+	res, err := graphql.UnmarshalFloatContext(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.SelectionSet, v float64) graphql.Marshaler {
+	res := graphql.MarshalFloatContext(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return graphql.WrapContextMarshaler(ctx, res)
+}
+
 func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v interface{}) (int, error) {
 	res, err := graphql.UnmarshalInt(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -3720,6 +4312,13 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	return res
 }
 
+func (ec *executionContext) marshalOChargeEstimates2ᚖgithubᚗcomᚋdejaᚑblueᚋsoftwareᚑinterviewᚋgoᚋpkgᚋgenᚋgqlᚋmodelᚐChargeEstimates(ctx context.Context, sel ast.SelectionSet, v *model.ChargeEstimates) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._ChargeEstimates(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalOCharger2ᚖgithubᚗcomᚋdejaᚑblueᚋsoftwareᚑinterviewᚋgoᚋpkgᚋgenᚋgqlᚋmodelᚐCharger(ctx context.Context, sel ast.SelectionSet, v *model.Charger) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
@@ -3732,6 +4331,13 @@ func (ec *executionContext) marshalOChargerState2ᚖgithubᚗcomᚋdejaᚑblue�
 		return graphql.Null
 	}
 	return ec._ChargerState(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalOCheapestChargeWindow2ᚖgithubᚗcomᚋdejaᚑblueᚋsoftwareᚑinterviewᚋgoᚋpkgᚋgenᚋgqlᚋmodelᚐCheapestChargeWindow(ctx context.Context, sel ast.SelectionSet, v *model.CheapestChargeWindow) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._CheapestChargeWindow(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOFloat2ᚖfloat64(ctx context.Context, v interface{}) (*float64, error) {
@@ -3763,6 +4369,22 @@ func (ec *executionContext) marshalOString2ᚖstring(ctx context.Context, sel as
 		return graphql.Null
 	}
 	res := graphql.MarshalString(*v)
+	return res
+}
+
+func (ec *executionContext) unmarshalOTime2ᚖtimeᚐTime(ctx context.Context, v interface{}) (*time.Time, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := graphql.UnmarshalTime(v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOTime2ᚖtimeᚐTime(ctx context.Context, sel ast.SelectionSet, v *time.Time) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	res := graphql.MarshalTime(*v)
 	return res
 }
 
