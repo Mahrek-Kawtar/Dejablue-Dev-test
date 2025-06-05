@@ -71,7 +71,7 @@ $$
 
 This approach models real-world electricity costs more accurately by considering time-dependent pricing, allowing users to see how charging costs vary depending on the time of day.
 
-```
+---
 ## Conclusion
 
 By implementing time-based variable tariffs and using the charger’s actual max power for charging time calculation, Task 2 provides a more realistic and dynamic estimation of EV charging cost and duration. This enables users to better understand how electricity prices fluctuate throughout the day and helps them make informed decisions about when to charge their vehicles to save money.
