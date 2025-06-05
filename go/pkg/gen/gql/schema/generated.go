@@ -70,7 +70,7 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
-		ChargeEstimates      func(childComplexity int, id string) int
+		ChargeEstimates      func(childComplexity int, id string, rate int) int
 		Charger              func(childComplexity int, id string) int
 		CheapestChargeWindow func(childComplexity int, id string) int
 		VehicleStateOfCharge func(childComplexity int, id string) int
@@ -90,7 +90,7 @@ type ComplexityRoot struct {
 type QueryResolver interface {
 	Charger(ctx context.Context, id string) (*model.Charger, error)
 	VehicleStateOfCharge(ctx context.Context, id string) (*model.VehicleStateOfCharge, error)
-	ChargeEstimates(ctx context.Context, id string) (*model.ChargeEstimates, error)
+	ChargeEstimates(ctx context.Context, id string, rate int) (*model.ChargeEstimates, error)
 	CheapestChargeWindow(ctx context.Context, id string) (*model.CheapestChargeWindow, error)
 }
 type SubscriptionResolver interface {
@@ -189,7 +189,7 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 			return 0, false
 		}
 
-		return e.complexity.Query.ChargeEstimates(childComplexity, args["id"].(string)), true
+		return e.complexity.Query.ChargeEstimates(childComplexity, args["id"].(string), args["rate"].(int)), true
 
 	case "Query.Charger":
 		if e.complexity.Query.Charger == nil {
@@ -397,7 +397,7 @@ type ChargerState {
 type Query {
   Charger(id: String!): Charger
   VehicleStateOfCharge(id: String!): VehicleStateOfCharge
-  ChargeEstimates(id: String!): ChargeEstimates #we add rate in task 1&2 
+  ChargeEstimates(id: String!,rate: Int!): ChargeEstimates  
   CheapestChargeWindow(id: String!): CheapestChargeWindow 
 }
 
@@ -429,6 +429,15 @@ func (ec *executionContext) field_Query_ChargeEstimates_args(ctx context.Context
 		}
 	}
 	args["id"] = arg0
+	var arg1 int
+	if tmp, ok := rawArgs["rate"]; ok {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("rate"))
+		arg1, err = ec.unmarshalNInt2int(ctx, tmp)
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["rate"] = arg1
 	return args, nil
 }
 
@@ -1069,7 +1078,7 @@ func (ec *executionContext) _Query_ChargeEstimates(ctx context.Context, field gr
 	}()
 	resTmp, err := ec.ResolverMiddleware(ctx, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().ChargeEstimates(rctx, fc.Args["id"].(string))
+		return ec.resolvers.Query().ChargeEstimates(rctx, fc.Args["id"].(string), fc.Args["rate"].(int))
 	})
 	if err != nil {
 		ec.Error(ctx, err)

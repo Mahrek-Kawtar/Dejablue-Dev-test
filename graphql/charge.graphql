@@ -29,7 +29,7 @@ type ChargerState {
 type Query {
   Charger(id: String!): Charger
   VehicleStateOfCharge(id: String!): VehicleStateOfCharge
-  ChargeEstimates(id: String!): ChargeEstimates #we add rate in task 1&2 
+  ChargeEstimates(id: String!,rate: Int!): ChargeEstimates  
   CheapestChargeWindow(id: String!): CheapestChargeWindow 
 }
 

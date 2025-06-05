@@ -22,21 +22,26 @@ const GET_CHARGER_AND_VEHICLE = gql`
     }
   }
 `;
-
-
-  //task 2)
 const GET_CHARGE_ESTIMATES = gql`
-  query GetChargeEstimates($id: String!) {
-    ChargeEstimates(id: $id) {
+  query GetChargeEstimates($id: String!, $rate: Int!) {
+    ChargeEstimates(id: $id, rate: $rate) {
       estimatedPrice
       estimatedTimeHours
     }
   }
 `;
 
-
 const ChargeRateController: React.FC<ChargeRateControllerProps> = ({ chargerId }) => {
+  //task 1 
+  const chargeRates = [
+    { label: "eco", rate: 25 },
+    { label: "smart", rate: 30 },
+    { label: "rapid", rate: 40 },
+  ];
 
+//task 1
+  const [chargeRate, setChargeRate] = useState(chargeRates[0].rate);
+  
   const { data: chargerData } = useQuery(GET_CHARGER_AND_VEHICLE, {
     variables: { id: chargerId },
   });
@@ -44,19 +49,16 @@ const ChargeRateController: React.FC<ChargeRateControllerProps> = ({ chargerId }
 //task 1&2
   const [getEstimates, { data: estimatesData, loading: loadingEstimates, error: estimatesError }] =
     useLazyQuery(GET_CHARGE_ESTIMATES);
-   
-  //Task 2)
+
+  //(Task 1)
   useEffect(() => {
     if (chargerId) {
-      getEstimates({ variables: { id: chargerId } });
+      getEstimates({ variables: { id: chargerId, rate: chargeRate } });
     }
-  }, [getEstimates, chargerId]);
-
+  }, [chargeRate, getEstimates, chargerId]);
   const currentLevel = chargerData?.VehicleStateOfCharge?.currentBatteryLevelKwH ?? 0;
   const maxLevel = chargerData?.VehicleStateOfCharge?.maxBatteryLevelKwH ?? 1;
   const batteryPercent = Math.round((currentLevel / maxLevel) * 100);
-
-
 
   return (
     <div className="bg-white rounded-2xl shadow-md p-6 mt-6 space-y-6">
@@ -69,7 +71,30 @@ const ChargeRateController: React.FC<ChargeRateControllerProps> = ({ chargerId }
         {/* Controller Content */}
         <div className="flex-1 space-y-6">
           <h2 className="text-lg font-semibold">Charge Rate Controller</h2>
-           
+          
+          {/* Buttons (task 1*/}
+          {<div className="flex space-x-6">
+            {chargeRates.map(({ label, rate }) => (
+              <label
+                key={rate}
+                className={`cursor-pointer capitalize px-4 py-2 rounded-full border ${
+                  chargeRate === rate
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-gray-100 text-gray-800 border-gray-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="chargeRate"
+                  value={rate}
+                  checked={chargeRate === rate}
+                  onChange={() => setChargeRate(rate)}
+                  className="hidden"
+                />
+                {label} – {rate}¢/kWh
+              </label>
+            ))} 
+          </div>}
           {/* Results * task 1&2*/}
           {loadingEstimates ? (
             <p className="text-gray-500">Loading charge estimates...</p>

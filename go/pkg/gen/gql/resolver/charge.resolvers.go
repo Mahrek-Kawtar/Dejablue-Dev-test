@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/deja-blue/software-interview/go/pkg/charge"
 	"github.com/deja-blue/software-interview/go/pkg/gen/gql/model"
@@ -38,8 +37,8 @@ func (r *queryResolver) VehicleStateOfCharge(ctx context.Context, id string) (*m
 	return model, nil
 }
 
-// Task 2
-func (r *queryResolver) ChargeEstimates(ctx context.Context, id string) (*model.ChargeEstimates, error) {
+// task 1
+func (r *queryResolver) ChargeEstimates(ctx context.Context, id string, rate int) (*model.ChargeEstimates, error) {
 	c, err := r.ChargeResolver.Charger(charge.ChargerID(id))
 	if err != nil {
 		return nil, err
@@ -48,29 +47,24 @@ func (r *queryResolver) ChargeEstimates(ctx context.Context, id string) (*model.
 	if err != nil || vehicle == nil {
 		return nil, errors.New("vehicle state unavailable")
 	}
-
 	remainingCharge := *vehicle.MaxBatteryLevelKwH - *vehicle.CurrentBatteryLevelKwH
-	if remainingCharge <= 0 {
-		return &model.ChargeEstimates{
-			EstimatedPrice:     0,
-			EstimatedTimeHours: 0,
-		}, nil
+
+	// Estimated price stays the same
+	price := (remainingCharge * float64(rate)) / 100
+
+	// Convert rate (¢/kWh) to power in kW, e.g., 25 → 2.5 kW
+	chargeRateKw := float64(rate) / 10.0
+
+	// Make sure we don't go over the charger's max capability
+	effectiveRateKw := chargeRateKw
+	if effectiveRateKw > c.MaxKwHDraw {
+		effectiveRateKw = c.MaxKwHDraw
 	}
-
-	now := time.Now()
-	rate := charge.VariableRateAt(now) // VariableRateAt returns price in dollars/kWh, so multiply by 100 to get cents
-
-	// Calculate the estimated price using the formula:
-	// Price = (Remaining charge in kWh * Tariff in cents per kWh) / 100 = price in dollars
-	estimatedPrice := charge.EstimatedPriceForRemainingCharge(remainingCharge, rate)
-
-	// Calculate charging time in hours based on the charger's max power (kW)
-	chargePowerKw := float64(c.MaxKwHDraw)
-	timeHours := remainingCharge / chargePowerKw
+	time := remainingCharge / effectiveRateKw
 
 	return &model.ChargeEstimates{
-		EstimatedPrice:     estimatedPrice,
-		EstimatedTimeHours: timeHours,
+		EstimatedPrice:     price,
+		EstimatedTimeHours: time,
 	}, nil
 }
 
