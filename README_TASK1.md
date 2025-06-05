@@ -101,5 +101,3 @@ This first task enables a simple and effective estimation of charging time and c
 The frontend provides a clear UI for selecting the mode and seeing real-time estimates.
 
 ---
-
-
