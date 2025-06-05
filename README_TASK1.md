@@ -1,6 +1,8 @@
+
 # **Task 1 – Estimate Charging Time and Cost with Fixed Rate and Mode**
 
 # **GOAL**
+
 The goal is to calculate **how long it will take to fully charge the vehicle’s battery** and **the total estimated cost** based on the user-selected charging mode.
 
 The available charging modes are:
@@ -19,6 +21,7 @@ Added a new GraphQL query:
 
 ```graphql
 ChargeEstimates(id: String!, rate: Int!): ChargeEstimates
+````
 
 * Parameters:
 
