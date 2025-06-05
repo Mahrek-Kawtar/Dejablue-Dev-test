@@ -7,6 +7,7 @@ package resolver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/deja-blue/software-interview/go/pkg/charge"
@@ -75,36 +76,7 @@ func (r *queryResolver) ChargeEstimates(ctx context.Context, id string) (*model.
 
 // CheapestChargeWindow is the resolver for the CheapestChargeWindow field.
 func (r *queryResolver) CheapestChargeWindow(ctx context.Context, id string) (*model.CheapestChargeWindow, error) {
-	c, err := r.ChargeResolver.Charger(charge.ChargerID(id))
-	if err != nil {
-		return nil, err
-	}
-	vehicle, err := c.ToVehicleStateOfChargeModel()
-	if err != nil || vehicle == nil {
-		return nil, errors.New("vehicle state unavailable")
-	}
-
-	remainingCharge := *vehicle.MaxBatteryLevelKwH - *vehicle.CurrentBatteryLevelKwH
-	if remainingCharge <= 0 {
-		// When no charge is needed, return nil times (allowed because fields are *time.Time)
-		return &model.CheapestChargeWindow{
-			StartTime:      nil,
-			EndTime:        nil,
-			EstimatedPrice: 0,
-		}, nil
-	}
-
-	now := time.Now()
-	maxPower := float64(c.MaxKwHDraw)
-
-	start, end, price := charge.CheapestChargeWindowECO(now, remainingCharge, maxPower)
-
-	// start, end are time.Time values, take pointers here
-	return &model.CheapestChargeWindow{
-		StartTime:      &start,
-		EndTime:        &end,
-		EstimatedPrice: price,
-	}, nil
+	panic(fmt.Errorf("not implemented: CheapestChargeWindow - CheapestChargeWindow"))
 }
 
 // ChargerState is the resolver for the ChargerState field.
